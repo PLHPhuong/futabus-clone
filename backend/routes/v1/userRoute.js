@@ -6,8 +6,8 @@ const userMiddleware = require("../../middlewares/userMiddleware");
 
 const { body, validationResult } = require("express-validator");
 
-// grobal variables
-// > validator
+// * INIT GROBAL VARIABLES
+// * > validator
 const fieldValidator = {
     phone: body("phone")
         .isNumeric()
@@ -36,7 +36,7 @@ const fieldValidator = {
         next();
     },
 };
-
+// * Validator Middleware
 const validateMiddleware = {
     register: [
         fieldValidator.phone.exists().withMessage(`"phone" is required`),
@@ -49,19 +49,16 @@ const validateMiddleware = {
         fieldValidator.errorHandler,
     ],
 };
-// > routes
+// * ROUTES
 router.get("/test", (req, res) => {
     console.log("Successfully pin to user route");
     res.status(200).send({ message: "Successfully pin to user route" });
 });
-router.post(
-    "/",
-    userMiddleware.addRoleField,
-    validateMiddleware.register,
-    userController.register
-);
+router.post("/", validateMiddleware.register, userController.register);
 router.post("/login", validateMiddleware.login, userController.login);
 
+router.get("/", userController.getAllUser);
+router.delete("/:id", userController.deleteUser);
 // router.post(
 //     "/",
 //     userMiddleware.addRoleField,
@@ -69,8 +66,5 @@ router.post("/login", validateMiddleware.login, userController.login);
 //     userController.register
 // );
 
-router.get("/", userController.getAllUser);
-// router.post("/login", userController.login);
-router.delete("/:id", userController.deleteUser);
 
 module.exports = router;

@@ -26,6 +26,119 @@ const fieldNames = Object.keys(User.schema.paths); // ["phone","password","usern
 
 // implement
 class userService {
+    static create = async (requestBody) => {
+        // * LOAD & INIT VARIABLES
+        const { phone, password, username, email } = requestBody;
+        const newUserInfo = { phone, password, username, email };
+
+        const keyFields = ["phone"];
+        const notIncluded = ["password"].concat(keyFields);
+        const key = `phone:${phone}`;
+
+        let newUser = {
+            MongoReturn: null,
+            Object: null,
+            HasAddedToRedis: false,
+        }; // ? for mongo
+
+        try {
+            // * CHECK EXISTENCE IN DB
+            // if (await User.findOne({ phone })) {
+            //     throw new Error("Phone number has been used");
+            // }
+            const ExitedError = new Error("Phone number has been used");
+            if (await redisClient.exists(key)) {
+                throw ExitedError;
+            }
+            if (await User.findOne({ phone })) {
+                throw ExitedError;
+            }
+
+            // * CREATE NEW USER / ACCOUNT
+
+            // ? Insert data into Mongo
+            newUser.MongoReturn = await User.create(newUserInfo);
+            newUser.Object = JSON.parse(JSON.stringify(newUser.MongoReturn));
+
+            // ? Insert data into Redis
+            // TODO: data current is set to have no expires date => if possible, let set it (cache purpose)
+            const userData = newUser.Object;
+            // const value = Object.keys(userData).reduce((obj, key) => {
+            //     if (!notIncluded.includes(key)) {
+            //         obj[key] = userData[key];
+            //     }
+            //     return obj;
+            // }, {});
+
+            // ! For redis version 4 or above, HSET can be pair with Object edisClient.HSET(key, password)
+            // await redisClient.HSET(key, "password", password);
+            // await redisClient.HSET(key, "other-field", JSON.stringify(value));
+            for (let field in userData) {
+                if (!["phone"].includes(field)) {
+                    await redisClient.HSET(
+                        key,
+                        field,
+                        userData[field] === null ? "null" : userData[field]
+                    );
+                }
+            }
+        } catch (error) {
+            // ? Print error to console
+            console.error(error);
+
+            // ? Drop created "user" if was created in mongo when error happened
+            newUser.MongoReturn?.deleteOne().catch((error) => {
+                console.error(error); // Handle any errors that occur during the deletion
+            });
+
+            // ? Drop created "user" if was created in redis when error happened (doesn't remove if it was in it before call this dunction))
+            if (newUser.MongoReturn) {
+                redisClient.exists(key).then((existedKey) => {
+                    redisClient.del(existedKey).catch((err) => {
+                        console.error(err);
+                    });
+                });
+            }
+
+            throw error;
+        }
+
+        return newUser.Object;
+    };
+
+    static validateLogin = async (requestBody) => {
+        // * LOAD & INIT VARIABLES
+        const { phone, password } = requestBody;
+        let result = null;
+        try {
+            // * FIND IN REDIS FIRST
+            const key = `phone:${phone}`;
+            result = await redisClient.hGetAll(key);
+            const result_keys = Object.keys(result);
+            // * FIND IN MONGO SECOND IF NOT IN REDIS
+            if (result_keys.length !== 0 && result["password"] == password) {
+                // ? formatting return
+                result = result_keys.reduce((obj, field) => {
+                    if (result[field] === "null") {
+                        obj[field] = null;
+                    } else if (["__v"].includes(field)) {
+                        obj[field] = parseInt(result[field]);
+                    } else {
+                        obj[field] = result[field];
+                    }
+                    return obj;
+                }, {});
+            } else {
+                result = await User.findOne({ phone, password });
+            }
+        } catch (error) {
+            console.error(error);
+            throw error;
+        }
+        // console.log(result);
+        return result;
+    };
+
     static validator = (requestBody) => {
         const validation = userJoiSchema.validate(requestBody);
         let error = null;
@@ -36,73 +149,6 @@ class userService {
     };
     static getAll = async () => {
         return await User.find();
-    };
-    static create = async (requestBody) => {
-        let result = { error: null, data: null };
-        // Load variables
-        const { phone, password, username, email } = requestBody;
-        const newUserInfo = { phone, password, username, email };
-
-        const keyFields = ["phone"];
-        const notIncluded = ["password"].concat(keyFields);
-        const key = `phone:${phone}`;
-
-        // Check existence
-
-
-        
-        if (await User.findOne({ phone })) {
-            throw new Error("Phone number has been used");
-        }
-        // Insert to mongo
-        let newUser = {
-            MongoReturn: null,
-            Object: null,
-        };
-
-        try {
-            newUser.MongoReturn = await User.create(newUserInfo);
-            newUser.Object = JSON.parse(JSON.stringify(newUser.MongoReturn));
-        } catch (err) {
-            console.log(err);
-            throw new Error("Error happenned with DB (mongo)");
-        }
-        // Insert to redis
-        try {
-            if (newUser.Object) {
-                const userData = newUser.Object;
-
-                const value = Object.keys(userData).reduce((obj, key) => {
-                    if (!notIncluded.includes(key)) {
-                        obj[key] = userData[key];
-                    }
-                    return obj;
-                }, {});
-                // For redis version 4 or above, HSET can be pair with Object
-                await redisClient.HSET(key, "password", password);
-                await redisClient.HSET(
-                    key,
-                    "other-field",
-                    JSON.stringify(value)
-                );
-            }
-        } catch (err) {
-            // Drop create user in mongo
-            newUser.MongoReturn?.deleteOne().catch((error) => {
-                console.error(error); // Handle any errors that occur during the deletion
-            });
-            // Drop created user in redis
-            redisClient.exists(key).then((existedKey) => {
-                redisClient.del(existedKey).catch((err) => {
-                    console.error(err);
-                });
-            });
-            const existedKey = await redisClient.exists(key);
-            console.error(err);
-            throw new Error("Error happenned with DB (redis)");
-        }
-
-        return newUser.Object;
     };
 
     static delete = async (_id) => {
