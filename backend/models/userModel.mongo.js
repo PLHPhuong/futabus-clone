@@ -1,25 +1,27 @@
 const mongoose = require("mongoose");
 
 const UserSchema = new mongoose.Schema({
-    
     phone: {
-        type : String,
-        require: [true,"Missing phone field"],
+        type: String,
+        require: [true, "Missing phone field"],
         unique: true,
     },
-    password:{
-        type : String,
-        require: [true,"Missing password field"],
+    password: {
+        type: String,
+        require: [true, "Missing password field"],
     },
-    username:{
-        type:String
+    username: {
+        type: String,
+        default: null,
     },
-    email:{
-        type:String
+    email: {
+        type: String,
+        default: null,
     },
-    role:{
-        type:String
-    }
+    role: {
+        type: String,
+        default: `customer`,
+    },
 });
 
-module.exports = mongoose.model('User',UserSchema)
+module.exports = mongoose.model("User", UserSchema);
